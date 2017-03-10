@@ -4,7 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-
+	"strings"
+	
 	"github.com/mitchellh/packer/common"
 	"github.com/mitchellh/packer/helper/config"
 	"github.com/mitchellh/packer/packer"
@@ -16,6 +17,9 @@ type Config struct {
 
 	// Command is the command to execute
 	Command string
+	// An inline script to execute. Multiple strings are all executed
+	// in the context of a single shell-local.
+	Inline []string
 
 	// ExecuteCommand is the command used to execute the command.
 	ExecuteCommand []string `mapstructure:"execute_command"`
@@ -41,6 +45,21 @@ func (p *Provisioner) Prepare(raws ...interface{}) error {
 		return err
 	}
 
+	if p.config.Inline != nil && len(p.config.Inline) == 0 {
+		p.config.Inline = nil
+	}
+
+	var errs *packer.MultiError
+	if p.config.Command == "" && len(p.config.Inline) > 0  {
+	   p.config.Command = strings.Join(p.config.Inline,";")
+	} else if p.config.Command != "" && len(p.config.Inline) > 0  {
+	   errs = packer.MultiErrorAppend(errs,
+			errors.New("only command or inline should be specified"))
+	} else {
+		errs = packer.MultiErrorAppend(errs,
+			errors.New("command or inline must be specified"))
+	}
+	
 	if len(p.config.ExecuteCommand) == 0 {
 		if runtime.GOOS == "windows" {
 			p.config.ExecuteCommand = []string{
@@ -56,13 +75,7 @@ func (p *Provisioner) Prepare(raws ...interface{}) error {
 			}
 		}
 	}
-
-	var errs *packer.MultiError
-	if p.config.Command == "" {
-		errs = packer.MultiErrorAppend(errs,
-			errors.New("command must be specified"))
-	}
-
+	
 	if len(p.config.ExecuteCommand) == 0 {
 		errs = packer.MultiErrorAppend(errs,
 			errors.New("execute_command must not be empty"))
